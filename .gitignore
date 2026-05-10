@@ -1,4 +1,5 @@
 python/.venv/
 python/**/__pycache__/
+**/__pycache__/
 python/*.egg-info/
 rust/target/

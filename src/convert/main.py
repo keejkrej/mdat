@@ -23,7 +23,6 @@ from .convert import ProgressEvent, resolve_selection, run_convert
 
 app = typer.Typer(
     add_completion=False,
-    invoke_without_command=True,
     help="Convert ND2/CZI files into per-position TIFF folders.",
 )
 
@@ -68,7 +67,7 @@ class RichProgressReporter:
             sys.stdout.write(f"{event.message}\n")
 
 
-@app.callback()
+@app.command()
 def convert(
     input_file: Annotated[
         Path,

@@ -1,4 +1,4 @@
-"""Minimal ND2 to TIFF converter."""
+"""Minimal ND2/CZI to TIFF converter."""
 
 __all__ = ["__version__"]
 

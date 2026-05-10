@@ -1,14 +1,18 @@
-"""ND2/CZI to TIFF conversion core."""
+"""Format-agnostic conversion core."""
 
 from __future__ import annotations
 
 import csv
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Mapping
+from typing import Callable
 
 import numpy as np
 
+from .adapters import (
+    ImageInfo,
+    resolve_reader_adapter,
+)
 from .slices import parse_slice_string
 
 
@@ -21,20 +25,6 @@ class ProgressEvent:
 
 
 ProgressCallback = Callable[[ProgressEvent], None]
-
-
-@dataclass(frozen=True)
-class ND2Info:
-    n_pos: int
-    n_time: int
-    n_chan: int
-    n_z: int
-
-
-@dataclass(frozen=True)
-class FrameLookup:
-    sequence_axes: tuple[str, ...]
-    index_by_coords: dict[tuple[int, ...], int]
 
 
 def emit_progress(
@@ -51,231 +41,33 @@ def emit_progress(
     callback(ProgressEvent(phase=phase, done=done, total=total, message=message))
 
 
-def _as_dimension_value(raw: object, axis: str) -> int:
-    if raw is None:
-        return 1
-    if isinstance(raw, int):
-        return 1
-    if isinstance(raw, (tuple, list)):
-        if len(raw) != 2:
-            raise ValueError(f"Expected 2 values for axis {axis}, got {raw!r}")
-        start, stop = raw
-        if not isinstance(start, int) or not isinstance(stop, int):
-            raise ValueError(f"Invalid range for axis {axis}: {raw!r}")
-        if stop < start:
-            raise ValueError(f"Invalid range for axis {axis}: {raw!r}")
-        return stop - start
-
-    raise ValueError(f"Unexpected dimension value for axis {axis}: {raw!r}")
-
-
-def _get_attr_or_call(handle: object, *names: str) -> object | None:
-    for name in names:
-        member = getattr(handle, name, None)
-        if member is None:
-            continue
-        return member() if callable(member) else member
-    return None
-
-
-def inspect_czi(input_czi: Path) -> ND2Info:
-    """Read CZI dimensions without converting frames."""
-    from pylibCZIrw import czi as pyczi
-
-    with pyczi.open_czi(str(input_czi)) as handle:
-        total_bounding_box = _get_attr_or_call(handle, "total_bounding_box")
-        if total_bounding_box is None:
-            raise ValueError("Unable to read CZI dimension information")
-        if not isinstance(total_bounding_box, Mapping):
-            raise ValueError("Unexpected CZI dimension information format")
-
-        scenes_bounding = _get_attr_or_call(
-            handle,
-            "scenes_bounding_rectangle",
-            "get_scenes_bounding_rectangle",
-            "scene_bounding_rectangles",
-        )
-        has_scenes = isinstance(scenes_bounding, Mapping) and len(scenes_bounding) > 0
-        n_pos = len(scenes_bounding) if has_scenes else 1
-
-        return ND2Info(
-            n_pos=n_pos,
-            n_time=_as_dimension_value(total_bounding_box.get("T"), "T"),
-            n_chan=_as_dimension_value(total_bounding_box.get("C"), "C"),
-            n_z=_as_dimension_value(total_bounding_box.get("Z"), "Z"),
-        )
-
-
-def _open_nd2_reader(input_nd2: Path) -> tuple[ND2Info, Callable[[int, int, int, int], np.ndarray], Callable[[], None]]:
-    """Open ND2 handle and expose a generic frame-reading callback."""
-    import nd2
-
-    handle = nd2.ND2File(str(input_nd2))
-    sizes = handle.sizes
-    n_pos = sizes.get("P", 1)
-    n_time = sizes.get("T", 1)
-    n_chan = sizes.get("C", 1)
-    n_z = sizes.get("Z", 1)
-    frame_lookup = build_frame_lookup(handle)
-    info = ND2Info(n_pos=n_pos, n_time=n_time, n_chan=n_chan, n_z=n_z)
-
-    def read_frame(p: int, t: int, c: int, z: int) -> np.ndarray:
-        return read_frame_2d(handle, frame_lookup, p, t, c, z)
-
-    return info, read_frame, handle.close
-
-
-def _open_czi_reader(
-    input_czi: Path,
-) -> tuple[ND2Info, Callable[[int, int, int, int], np.ndarray], Callable[[], None]]:
-    """Open CZI handle and expose a generic frame-reading callback."""
-    from pylibCZIrw import czi as pyczi
-
-    cm = pyczi.open_czi(str(input_czi))
-    handle = cm.__enter__()
-    total_bounding_box = _get_attr_or_call(handle, "total_bounding_box")
-    if total_bounding_box is None:
-        raise ValueError("Unable to read CZI dimension information")
-    if not isinstance(total_bounding_box, Mapping):
-        raise ValueError("Unexpected CZI dimension information format")
-
-    scenes_bounding = _get_attr_or_call(
-        handle,
-        "scenes_bounding_rectangle",
-        "get_scenes_bounding_rectangle",
-        "scene_bounding_rectangles",
-    )
-    scene_ids: list[object] = list(scenes_bounding) if isinstance(scenes_bounding, Mapping) else []
-
-    has_scenes = isinstance(scenes_bounding, Mapping) and len(scenes_bounding) > 0
-    scene_ids = scene_ids if has_scenes else []
-    n_pos = len(scene_ids) if has_scenes else 1
-    n_time = _as_dimension_value(total_bounding_box.get("T"), "T")
-    n_chan = _as_dimension_value(total_bounding_box.get("C"), "C")
-    n_z = _as_dimension_value(total_bounding_box.get("Z"), "Z")
-    has_channel_axis = "C" in total_bounding_box
-    info = ND2Info(n_pos=n_pos, n_time=n_time, n_chan=n_chan, n_z=n_z)
-
-    def read_frame(p: int, t: int, c: int, z: int) -> np.ndarray:
-        plane: dict[str, int] = {"T": t, "Z": z}
-        if has_channel_axis and n_chan > 1:
-            plane["C"] = c
-        kwargs: dict[str, object] = {"plane": plane}
-        if scene_ids:
-            kwargs["scene"] = scene_ids[p]
-        return np.asarray(handle.read(**kwargs))
-
-    def close() -> None:
-        close_method = getattr(cm, "__exit__", None)
-        if callable(close_method):
-            close_method(None, None, None)
-        else:
-            raise ValueError("Unable to close CZI handle correctly")
-
-    return info, read_frame, close
-
-
 def open_reader(
     input_path: Path,
-) -> tuple[ND2Info, Callable[[int, int, int, int], np.ndarray], Callable[[], None]]:
+) -> tuple[ImageInfo, Callable[[int, int, int, int], np.ndarray], Callable[[], None]]:
     """Open an input handle and return shape information plus frame accessor."""
-    suffix = input_path.suffix.lower()
-    if suffix == ".nd2":
-        return _open_nd2_reader(input_path)
-    if suffix == ".czi":
-        return _open_czi_reader(input_path)
-
-    raise ValueError(f"Unsupported input file format: {input_path.suffix}")
+    adapter = resolve_reader_adapter(input_path)
+    session = adapter.open(input_path)
+    return session.info, session.read_frame, session.close
 
 
-def inspect_input(input_path: Path) -> ND2Info:
+def inspect_input(input_path: Path) -> ImageInfo:
     """Inspect input metadata based on file type."""
-    suffix = input_path.suffix.lower()
-    if suffix == ".nd2":
-        return inspect_nd2(input_path)
-    if suffix == ".czi":
-        return inspect_czi(input_path)
-    raise ValueError(f"Unsupported input file format: {input_path.suffix}")
-
-
-def inspect_nd2(input_nd2: Path) -> ND2Info:
-    """Read ND2 dimensions without converting frames."""
-    import nd2
-
-    handle = nd2.ND2File(str(input_nd2))
-    try:
-        sizes = handle.sizes
-        return ND2Info(
-            n_pos=sizes.get("P", 1),
-            n_time=sizes.get("T", 1),
-            n_chan=sizes.get("C", 1),
-            n_z=sizes.get("Z", 1),
-        )
-    finally:
-        handle.close()
+    adapter = resolve_reader_adapter(input_path)
+    return adapter.inspect(input_path)
 
 
 def resolve_selection(
-    input_nd2: Path,
+    input_path: Path,
     position_slice: str,
     time_slice: str,
     channel_slice: str,
-) -> tuple[ND2Info, list[int], list[int], list[int]]:
-    """Load ND2 metadata and resolve selected positions and timepoints."""
-    info = inspect_input(input_nd2)
+) -> tuple[ImageInfo, list[int], list[int], list[int]]:
+    """Load metadata and resolve selected positions and timepoints."""
+    info = inspect_input(input_path)
     pos_indices = parse_slice_string(position_slice, info.n_pos)
     time_indices = parse_slice_string(time_slice, info.n_time)
     channel_indices = parse_slice_string(channel_slice, info.n_chan)
     return info, pos_indices, time_indices, channel_indices
-
-
-def build_frame_lookup(handle) -> FrameLookup:
-    """Build a lookup from ND2 loop coordinates to sequence frame index."""
-    loop_indices = tuple(handle.loop_indices)
-    if not loop_indices:
-        return FrameLookup(sequence_axes=(), index_by_coords={(): 0})
-
-    sequence_axes = tuple(
-        axis
-        for axis in ("P", "T", "C", "Z")
-        if any(axis in frame_indices for frame_indices in loop_indices)
-    )
-    index_by_coords = {
-        tuple(frame_indices.get(axis, 0) for axis in sequence_axes): seq_index
-        for seq_index, frame_indices in enumerate(loop_indices)
-    }
-    return FrameLookup(sequence_axes=sequence_axes, index_by_coords=index_by_coords)
-
-
-def read_frame_2d(handle, lookup: FrameLookup, p: int, t: int, c: int, z: int) -> np.ndarray:
-    """Read a 2D YxX frame at the given P/T/C/Z coordinate."""
-    coords = {"P": p, "T": t, "C": c, "Z": z}
-    seq_key = tuple(coords[axis] for axis in lookup.sequence_axes)
-    if seq_key not in lookup.index_by_coords:
-        raise ValueError(
-            f"No ND2 frame found for coordinates P={p}, T={t}, C={c}, Z={z}"
-        )
-
-    seq_index = lookup.index_by_coords[seq_key]
-    frame = handle.read_frame(seq_index)
-    frame = np.asarray(frame)
-
-    if "C" not in lookup.sequence_axes and handle.sizes.get("C", 1) > 1:
-        if frame.ndim >= 3 and frame.shape[0] == handle.sizes["C"]:
-            frame = frame[c]
-        elif frame.ndim >= 3 and frame.shape[-1] == handle.sizes["C"]:
-            frame = frame[..., c]
-        else:
-            raise ValueError(
-                "Unable to locate the channel axis in ND2 frame data for in-pixel channels"
-            )
-
-    if frame.ndim == 3 and frame.shape[0] == 1:
-        frame = frame[0]
-    elif frame.ndim == 3 and frame.shape[-1] == 1:
-        frame = frame[..., 0]
-
-    return np.asarray(frame)
 
 
 def write_tiff(path: Path, frame: np.ndarray) -> None:
@@ -288,7 +80,7 @@ def write_tiff(path: Path, frame: np.ndarray) -> None:
 
 
 def run_convert(
-    input_nd2: Path,
+    input_path: Path,
     position_slice: str,
     time_slice: str,
     channel_slice: str,
@@ -296,8 +88,8 @@ def run_convert(
     *,
     on_progress: ProgressCallback | None = None,
 ) -> None:
-    """Convert an ND2/CZI file into per-position TIFF folders."""
-    info, read_frame, close = open_reader(input_nd2)
+    """Convert a supported file format into per-position TIFF folders."""
+    info, read_frame, close = open_reader(input_path)
     try:
         pos_indices = parse_slice_string(position_slice, info.n_pos)
         time_indices = parse_slice_string(time_slice, info.n_time)
@@ -358,58 +150,3 @@ def run_convert(
         )
     finally:
         close()
-
-
-class _FakeHandle:
-    def __init__(self, sizes: dict[str, int], loop_indices: tuple[dict[str, int], ...], frames: list[np.ndarray]):
-        self.sizes = sizes
-        self.loop_indices = loop_indices
-        self._frames = frames
-
-    def read_frame(self, index: int) -> np.ndarray:
-        return self._frames[index]
-
-
-def test_build_frame_lookup_omits_in_pixel_channel() -> None:
-    handle = _FakeHandle(
-        sizes={"P": 1, "T": 2, "C": 2, "Z": 1, "Y": 3, "X": 4},
-        loop_indices=({"T": 0}, {"T": 1}),
-        frames=[
-            np.arange(24, dtype=np.uint16).reshape(2, 3, 4),
-            np.arange(24, 48, dtype=np.uint16).reshape(2, 3, 4),
-        ],
-    )
-
-    lookup = build_frame_lookup(handle)
-
-    assert lookup.sequence_axes == ("T",)
-    assert lookup.index_by_coords == {(0,): 0, (1,): 1}
-
-
-def test_read_frame_2d_extracts_in_pixel_channel() -> None:
-    handle = _FakeHandle(
-        sizes={"P": 1, "T": 1, "C": 2, "Z": 1, "Y": 2, "X": 3},
-        loop_indices=({},),
-        frames=[np.array([[[1, 2, 3], [4, 5, 6]], [[10, 11, 12], [13, 14, 15]]], dtype=np.uint16)],
-    )
-
-    lookup = build_frame_lookup(handle)
-    frame = read_frame_2d(handle, lookup, 0, 0, 1, 0)
-
-    np.testing.assert_array_equal(frame, np.array([[10, 11, 12], [13, 14, 15]], dtype=np.uint16))
-
-
-def test_read_frame_2d_uses_channel_in_sequence_lookup() -> None:
-    handle = _FakeHandle(
-        sizes={"P": 1, "T": 1, "C": 2, "Z": 1, "Y": 2, "X": 2},
-        loop_indices=({"C": 0}, {"C": 1}),
-        frames=[
-            np.array([[1, 2], [3, 4]], dtype=np.uint16),
-            np.array([[5, 6], [7, 8]], dtype=np.uint16),
-        ],
-    )
-
-    lookup = build_frame_lookup(handle)
-    frame = read_frame_2d(handle, lookup, 0, 0, 1, 0)
-
-    np.testing.assert_array_equal(frame, np.array([[5, 6], [7, 8]], dtype=np.uint16))

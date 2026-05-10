@@ -24,7 +24,7 @@ from .convert import ProgressEvent, resolve_selection, run_convert
 app = typer.Typer(
     add_completion=False,
     invoke_without_command=True,
-    help="Convert an ND2 file into per-position TIFF folders.",
+    help="Convert ND2/CZI files into per-position TIFF folders.",
 )
 
 
@@ -70,13 +70,12 @@ class RichProgressReporter:
 
 @app.callback()
 def convert(
-    input: Annotated[
+    input_file: Annotated[
         Path,
-        typer.Option(
-            "--input",
+        typer.Argument(
             exists=True,
             dir_okay=False,
-            help="Path to the .nd2 file to convert.",
+            help="Path to the .nd2 or .czi file to convert.",
         ),
     ],
     position: Annotated[
@@ -114,7 +113,7 @@ def convert(
 ) -> None:
     try:
         info, pos_indices, time_indices, channel_indices = resolve_selection(
-            input,
+            input_file,
             position,
             time,
             channel,
@@ -124,7 +123,7 @@ def convert(
 
     total = len(pos_indices) * len(time_indices) * len(channel_indices) * info.n_z
 
-    typer.echo(f"ND2: {info.n_pos} positions, T={info.n_time}, C={info.n_chan}, Z={info.n_z}")
+    typer.echo(f"Input: {info.n_pos} positions, T={info.n_time}, C={info.n_chan}, Z={info.n_z}")
     typer.echo("")
     typer.echo(
         f"Selected {len(pos_indices)}/{info.n_pos} positions, "
@@ -149,7 +148,7 @@ def convert(
     progress = RichProgressReporter()
     try:
         run_convert(
-            input,
+            input_file,
             position,
             time,
             channel,

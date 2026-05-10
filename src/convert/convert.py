@@ -1,11 +1,11 @@
-"""ND2 to TIFF conversion core."""
+"""ND2/CZI to TIFF conversion core."""
 
 from __future__ import annotations
 
 import csv
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Mapping
 
 import numpy as np
 
@@ -51,6 +51,153 @@ def emit_progress(
     callback(ProgressEvent(phase=phase, done=done, total=total, message=message))
 
 
+def _as_dimension_value(raw: object, axis: str) -> int:
+    if raw is None:
+        return 1
+    if isinstance(raw, int):
+        return 1
+    if isinstance(raw, (tuple, list)):
+        if len(raw) != 2:
+            raise ValueError(f"Expected 2 values for axis {axis}, got {raw!r}")
+        start, stop = raw
+        if not isinstance(start, int) or not isinstance(stop, int):
+            raise ValueError(f"Invalid range for axis {axis}: {raw!r}")
+        if stop < start:
+            raise ValueError(f"Invalid range for axis {axis}: {raw!r}")
+        return stop - start
+
+    raise ValueError(f"Unexpected dimension value for axis {axis}: {raw!r}")
+
+
+def _get_attr_or_call(handle: object, *names: str) -> object | None:
+    for name in names:
+        member = getattr(handle, name, None)
+        if member is None:
+            continue
+        return member() if callable(member) else member
+    return None
+
+
+def inspect_czi(input_czi: Path) -> ND2Info:
+    """Read CZI dimensions without converting frames."""
+    from pylibCZIrw import czi as pyczi
+
+    with pyczi.open_czi(str(input_czi)) as handle:
+        total_bounding_box = _get_attr_or_call(handle, "total_bounding_box")
+        if total_bounding_box is None:
+            raise ValueError("Unable to read CZI dimension information")
+        if not isinstance(total_bounding_box, Mapping):
+            raise ValueError("Unexpected CZI dimension information format")
+
+        scenes_bounding = _get_attr_or_call(
+            handle,
+            "scenes_bounding_rectangle",
+            "get_scenes_bounding_rectangle",
+            "scene_bounding_rectangles",
+        )
+        has_scenes = isinstance(scenes_bounding, Mapping) and len(scenes_bounding) > 0
+        n_pos = len(scenes_bounding) if has_scenes else 1
+
+        return ND2Info(
+            n_pos=n_pos,
+            n_time=_as_dimension_value(total_bounding_box.get("T"), "T"),
+            n_chan=_as_dimension_value(total_bounding_box.get("C"), "C"),
+            n_z=_as_dimension_value(total_bounding_box.get("Z"), "Z"),
+        )
+
+
+def _open_nd2_reader(input_nd2: Path) -> tuple[ND2Info, Callable[[int, int, int, int], np.ndarray], Callable[[], None]]:
+    """Open ND2 handle and expose a generic frame-reading callback."""
+    import nd2
+
+    handle = nd2.ND2File(str(input_nd2))
+    sizes = handle.sizes
+    n_pos = sizes.get("P", 1)
+    n_time = sizes.get("T", 1)
+    n_chan = sizes.get("C", 1)
+    n_z = sizes.get("Z", 1)
+    frame_lookup = build_frame_lookup(handle)
+    info = ND2Info(n_pos=n_pos, n_time=n_time, n_chan=n_chan, n_z=n_z)
+
+    def read_frame(p: int, t: int, c: int, z: int) -> np.ndarray:
+        return read_frame_2d(handle, frame_lookup, p, t, c, z)
+
+    return info, read_frame, handle.close
+
+
+def _open_czi_reader(
+    input_czi: Path,
+) -> tuple[ND2Info, Callable[[int, int, int, int], np.ndarray], Callable[[], None]]:
+    """Open CZI handle and expose a generic frame-reading callback."""
+    from pylibCZIrw import czi as pyczi
+
+    cm = pyczi.open_czi(str(input_czi))
+    handle = cm.__enter__()
+    total_bounding_box = _get_attr_or_call(handle, "total_bounding_box")
+    if total_bounding_box is None:
+        raise ValueError("Unable to read CZI dimension information")
+    if not isinstance(total_bounding_box, Mapping):
+        raise ValueError("Unexpected CZI dimension information format")
+
+    scenes_bounding = _get_attr_or_call(
+        handle,
+        "scenes_bounding_rectangle",
+        "get_scenes_bounding_rectangle",
+        "scene_bounding_rectangles",
+    )
+    scene_ids: list[object] = list(scenes_bounding) if isinstance(scenes_bounding, Mapping) else []
+
+    has_scenes = isinstance(scenes_bounding, Mapping) and len(scenes_bounding) > 0
+    scene_ids = scene_ids if has_scenes else []
+    n_pos = len(scene_ids) if has_scenes else 1
+    n_time = _as_dimension_value(total_bounding_box.get("T"), "T")
+    n_chan = _as_dimension_value(total_bounding_box.get("C"), "C")
+    n_z = _as_dimension_value(total_bounding_box.get("Z"), "Z")
+    has_channel_axis = "C" in total_bounding_box
+    info = ND2Info(n_pos=n_pos, n_time=n_time, n_chan=n_chan, n_z=n_z)
+
+    def read_frame(p: int, t: int, c: int, z: int) -> np.ndarray:
+        plane: dict[str, int] = {"T": t, "Z": z}
+        if has_channel_axis and n_chan > 1:
+            plane["C"] = c
+        kwargs: dict[str, object] = {"plane": plane}
+        if scene_ids:
+            kwargs["scene"] = scene_ids[p]
+        return np.asarray(handle.read(**kwargs))
+
+    def close() -> None:
+        close_method = getattr(cm, "__exit__", None)
+        if callable(close_method):
+            close_method(None, None, None)
+        else:
+            raise ValueError("Unable to close CZI handle correctly")
+
+    return info, read_frame, close
+
+
+def open_reader(
+    input_path: Path,
+) -> tuple[ND2Info, Callable[[int, int, int, int], np.ndarray], Callable[[], None]]:
+    """Open an input handle and return shape information plus frame accessor."""
+    suffix = input_path.suffix.lower()
+    if suffix == ".nd2":
+        return _open_nd2_reader(input_path)
+    if suffix == ".czi":
+        return _open_czi_reader(input_path)
+
+    raise ValueError(f"Unsupported input file format: {input_path.suffix}")
+
+
+def inspect_input(input_path: Path) -> ND2Info:
+    """Inspect input metadata based on file type."""
+    suffix = input_path.suffix.lower()
+    if suffix == ".nd2":
+        return inspect_nd2(input_path)
+    if suffix == ".czi":
+        return inspect_czi(input_path)
+    raise ValueError(f"Unsupported input file format: {input_path.suffix}")
+
+
 def inspect_nd2(input_nd2: Path) -> ND2Info:
     """Read ND2 dimensions without converting frames."""
     import nd2
@@ -75,7 +222,7 @@ def resolve_selection(
     channel_slice: str,
 ) -> tuple[ND2Info, list[int], list[int], list[int]]:
     """Load ND2 metadata and resolve selected positions and timepoints."""
-    info = inspect_nd2(input_nd2)
+    info = inspect_input(input_nd2)
     pos_indices = parse_slice_string(position_slice, info.n_pos)
     time_indices = parse_slice_string(time_slice, info.n_time)
     channel_indices = parse_slice_string(channel_slice, info.n_chan)
@@ -149,23 +296,14 @@ def run_convert(
     *,
     on_progress: ProgressCallback | None = None,
 ) -> None:
-    """Convert an ND2 file into per-position TIFF folders."""
-    import nd2
-
-    handle = nd2.ND2File(str(input_nd2))
+    """Convert an ND2/CZI file into per-position TIFF folders."""
+    info, read_frame, close = open_reader(input_nd2)
     try:
-        sizes = handle.sizes
-        n_pos = sizes.get("P", 1)
-        n_time = sizes.get("T", 1)
-        n_chan = sizes.get("C", 1)
-        n_z = sizes.get("Z", 1)
-        frame_lookup = build_frame_lookup(handle)
+        pos_indices = parse_slice_string(position_slice, info.n_pos)
+        time_indices = parse_slice_string(time_slice, info.n_time)
+        channel_indices = parse_slice_string(channel_slice, info.n_chan)
 
-        pos_indices = parse_slice_string(position_slice, n_pos)
-        time_indices = parse_slice_string(time_slice, n_time)
-        channel_indices = parse_slice_string(channel_slice, n_chan)
-
-        total = len(pos_indices) * len(time_indices) * len(channel_indices) * n_z
+        total = len(pos_indices) * len(time_indices) * len(channel_indices) * info.n_z
         emit_progress(
             on_progress,
             phase="start",
@@ -173,7 +311,7 @@ def run_convert(
             total=total,
             message=(
                 f"Selected {len(pos_indices)} positions, {len(time_indices)} timepoints, "
-                f"{len(channel_indices)} channels, {n_z} z-slices. Total frames: {total}"
+                f"{len(channel_indices)} channels, {info.n_z} z-slices. Total frames: {total}"
             ),
         )
 
@@ -192,8 +330,8 @@ def run_convert(
 
             for t_new, t_orig in enumerate(time_indices):
                 for c_orig in channel_indices:
-                    for z in range(n_z):
-                        frame = read_frame_2d(handle, frame_lookup, p_idx, t_orig, c_orig, z)
+                    for z in range(info.n_z):
+                        frame = read_frame(p_idx, t_orig, c_orig, z)
                         filename = (
                             f"img_channel{c_orig:03d}"
                             f"_position{p_idx:03d}"
@@ -219,7 +357,7 @@ def run_convert(
             message=f"Wrote {output}",
         )
     finally:
-        handle.close()
+        close()
 
 
 class _FakeHandle:

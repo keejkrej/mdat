@@ -1,4 +1,4 @@
-"""CLI entrypoint for the standalone ND2 converter."""
+"""CLI entrypoint for microscopy data utilities."""
 
 from __future__ import annotations
 
@@ -20,10 +20,12 @@ from rich.progress import (
 )
 
 from .convert import ProgressEvent, resolve_selection, run_convert
+from .metadata import collect_raw_metadata, render_metadata_json, write_text_output
 
 app = typer.Typer(
     add_completion=False,
-    help="Convert ND2/CZI files into per-position TIFF folders.",
+    no_args_is_help=True,
+    help="Microscopy data utilities for ND2/CZI files.",
 )
 
 
@@ -77,34 +79,35 @@ def convert(
             help="Path to the .nd2 or .czi file to convert.",
         ),
     ],
+    output: Annotated[
+        Path,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output directory (will contain Pos*/... TIFF folders).",
+        ),
+    ],
     position: Annotated[
         str,
         typer.Option(
             "--position",
             help='Positions to convert: "all" or comma-separated indices/slices, e.g. "0:5,10".',
         ),
-    ],
+    ] = "all",
     time: Annotated[
         str,
         typer.Option(
             "--time",
             help='Timepoints to convert: "all" or comma-separated indices/slices, e.g. "0:50,100".',
         ),
-    ],
+    ] = "all",
     channel: Annotated[
         str,
         typer.Option(
             "--channel",
             help='Channels to convert: "all" or comma-separated indices/slices, e.g. "0:2,4".',
         ),
-    ],
-    output: Annotated[
-        Path,
-        typer.Option(
-            "--output",
-            help="Output directory (will contain Pos*/... TIFF folders).",
-        ),
-    ],
+    ] = "all",
     yes: Annotated[
         bool,
         typer.Option("--yes", "-y", help="Skip confirmation prompt."),
@@ -166,5 +169,50 @@ def convert(
     sys.stderr.write("\n")
 
 
+@app.command()
+def metadata(
+    input_file: Annotated[
+        Path,
+        typer.Argument(
+            exists=True,
+            dir_okay=False,
+            help="Path to the .nd2 or .czi file to inspect.",
+        ),
+    ],
+    output: Annotated[
+        Path | None,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output metadata file. Defaults to stdout.",
+        ),
+    ] = None,
+    raw: Annotated[
+        bool,
+        typer.Option(
+            "--raw",
+            help="Export the native raw metadata payload instead of normalized JSON.",
+        ),
+    ] = False,
+) -> None:
+    try:
+        if raw:
+            payload = collect_raw_metadata(input_file)
+            content = payload.raw
+            if content is None:
+                raise ValueError("No raw metadata payload was returned")
+        else:
+            content = render_metadata_json(input_file)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    if output is None:
+        typer.echo(content, nl=False)
+        return
+
+    write_text_output(output, content)
+    typer.echo(f"Wrote {output}")
+
+
 def main() -> None:
-    app(prog_name="convert")
+    app(prog_name="mdat")

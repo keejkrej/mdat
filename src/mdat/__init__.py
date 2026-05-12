@@ -1,4 +1,4 @@
-"""Minimal ND2/CZI to TIFF converter."""
+"""ND2/CZI microscopy data utilities."""
 
 __all__ = ["__version__"]
 

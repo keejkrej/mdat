@@ -1,6 +1,6 @@
-# convert (Python)
+# mdat (Python)
 
-Python CLI package for standalone ND2/CZI to TIFF conversion.
+Python CLI package for standalone ND2/CZI microscopy data utilities.
 
 ## Install
 
@@ -11,6 +11,11 @@ uv sync
 ## Usage
 
 ```bash
-uv run convert sample.nd2 --position all --time all --channel all --output out -y
-uv run convert sample.czi --position all --time all --channel all --output out -y
+uv run mdat convert sample.nd2 --output out -y
+uv run mdat convert sample.czi --output out -y
+uv run mdat metadata sample.czi --output sample.metadata.json
+uv run mdat metadata sample.czi --raw --output sample.metadata.xml
 ```
+
+The default metadata JSON is a normalized, format-agnostic summary. Use `--raw`
+when you need the full vendor/library metadata payload.

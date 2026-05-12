@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Protocol
+from typing import Any, Callable, Protocol
 
 import numpy as np
 
@@ -24,6 +24,13 @@ class ReaderSession:
     close: Callable[[], None]
 
 
+@dataclass(frozen=True)
+class MetadataPayload:
+    normalized: dict[str, Any]
+    raw: str | None = None
+    raw_format: str | None = None
+
+
 class ReaderAdapter(Protocol):
     """Pluggable adapter for a microscope file format."""
 
@@ -34,6 +41,9 @@ class ReaderAdapter(Protocol):
         ...
 
     def inspect(self, input_path: Path) -> ImageInfo:
+        ...
+
+    def inspect_metadata(self, input_path: Path) -> MetadataPayload:
         ...
 
     def open(self, input_path: Path) -> ReaderSession:
@@ -52,6 +62,7 @@ def _ensure_2d(frame: np.ndarray) -> np.ndarray:
 
 __all__ = [
     "ImageInfo",
+    "MetadataPayload",
     "ReaderSession",
     "ReaderAdapter",
     "_ensure_2d",

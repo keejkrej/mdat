@@ -7,7 +7,7 @@ import pytest
 from mdat.core.formats.input.czi import CZIReaderAdapter
 
 
-def test_timelapse_interval_from_active_time_series_setup() -> None:
+def test_time_increment_configured_from_time_series_setup() -> None:
     adapter = CZIReaderAdapter()
     metadata = {
         "ImageDocument": {
@@ -35,12 +35,11 @@ def test_timelapse_interval_from_active_time_series_setup() -> None:
         }
     }
 
-    assert adapter._timelapse_interval_s(metadata, metadata["ImageDocument"]["Metadata"]["Information"]["Image"], 250) == 5.0
+    assert adapter._time_increment_configured_s(metadata, 250) == 5.0
 
 
-def test_timelapse_interval_from_t_positions_increment() -> None:
+def test_time_increment_from_t_positions_increment() -> None:
     adapter = CZIReaderAdapter()
-    metadata = {"ImageDocument": {"Metadata": {"Experiment": {"ExperimentBlocks": {}}}}}
     image = {
         "Dimensions": {
             "T": {
@@ -54,10 +53,10 @@ def test_timelapse_interval_from_t_positions_increment() -> None:
         }
     }
 
-    assert adapter._timelapse_interval_s(metadata, image, 250) == pytest.approx(5.000024096385542)
+    assert adapter._time_increment_s(image, 250) == pytest.approx(5.000024096385542)
 
 
-def test_timelapse_interval_none_for_single_timepoint() -> None:
+def test_time_increments_none_for_single_timepoint() -> None:
     adapter = CZIReaderAdapter()
     metadata = {
         "ImageDocument": {
@@ -67,10 +66,10 @@ def test_timelapse_interval_none_for_single_timepoint() -> None:
                         "AcquisitionBlock": {
                             "SubDimensionSetups": {
                                 "TimeSeriesSetup": {
-                                    "@IsActivated": "false",
+                                    "@IsActivated": "true",
                                     "Interval": {
                                         "TimeSpan": {
-                                            "Value": "0",
+                                            "Value": "5",
                                             "DefaultUnitFormat": "s",
                                         }
                                     },
@@ -83,20 +82,27 @@ def test_timelapse_interval_none_for_single_timepoint() -> None:
             }
         }
     }
+    image = metadata["ImageDocument"]["Metadata"]["Information"]["Image"]
 
-    assert adapter._timelapse_interval_s(metadata, metadata["ImageDocument"]["Metadata"]["Information"]["Image"], 1) is None
+    assert adapter._time_increment_configured_s(metadata, 1) is None
+    assert adapter._time_increment_s(image, 1) is None
 
 
 @pytest.mark.parametrize(
-    ("path", "expected_frame_interval_s"),
+    ("path", "expected_configured_s", "expected_increment_s"),
     [
-        (Path("/home/jack/data/E4-OR33-LN229-KO-PeriTumorActuation-01.czi"), 5.0),
-        (Path("/home/jack/data/airy.czi"), None),
+        (
+            Path("/home/jack/data/E4-OR33-LN229-KO-PeriTumorActuation-01.czi"),
+            5.0,
+            pytest.approx(5.000024096385542),
+        ),
+        (Path("/home/jack/data/airy.czi"), None, None),
     ],
 )
-def test_czi_frame_interval_on_local_files(
+def test_czi_time_increments_on_local_files(
     path: Path,
-    expected_frame_interval_s: float | None,
+    expected_configured_s: float | None,
+    expected_increment_s: float | None,
 ) -> None:
     if not path.is_file():
         pytest.skip(f"Missing local fixture: {path}")
@@ -104,6 +110,8 @@ def test_czi_frame_interval_on_local_files(
     payload = CZIReaderAdapter().inspect_metadata(path)
     acquisition = payload.normalized["acquisition"]
 
-    assert acquisition["frame_interval_s"] == expected_frame_interval_s
+    assert acquisition["time_increment_configured_s"] == expected_configured_s
+    assert acquisition["time_increment_s"] == expected_increment_s
+    assert "frame_interval_s" not in acquisition
     assert "frame_scan_s" not in acquisition
     assert "pixel_time_s" not in acquisition

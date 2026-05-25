@@ -167,7 +167,8 @@ def acdc_metadata_fields(normalized: dict[str, Any]) -> dict[str, Any]:
         "pixel_size_y": pixel_size.get("y"),
         "pixel_size_z": pixel_size.get("z"),
         "lens_na": objective.get("numerical_aperture"),
-        "time_increment": acquisition.get("frame_interval_s"),
+        "time_increment": acquisition.get("time_increment_s"),
+        "time_increment_configured": acquisition.get("time_increment_configured_s"),
     }
 
 
@@ -192,6 +193,7 @@ def write_acdc_metadata_csv(
         ("SizeT", size_t),
         ("SizeZ", size_z),
         ("TimeIncrement", metadata_fields.get("time_increment")),
+        ("TimeIncrementConfigured", metadata_fields.get("time_increment_configured")),
         ("PhysicalSizeZ", metadata_fields.get("pixel_size_z")),
         ("PhysicalSizeY", metadata_fields.get("pixel_size_y")),
         ("PhysicalSizeX", metadata_fields.get("pixel_size_x")),

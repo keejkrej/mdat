@@ -82,13 +82,12 @@ class CZIReaderAdapter:
             if isinstance(block, Mapping)
         ]
 
-    def _timelapse_interval_s(
+    def _time_increment_configured_s(
         self,
         metadata: Mapping[str, Any],
-        image: Mapping[str, Any],
         size_t: int,
     ) -> float | None:
-        """Return the interval between consecutive T frames, matching ND2 periodMs semantics."""
+        """Return the configured interval between consecutive T frames in seconds."""
         if size_t <= 1:
             return None
 
@@ -107,6 +106,17 @@ class CZIReaderAdapter:
             seconds = self._timespan_to_seconds(interval.get("TimeSpan"))
             if seconds is not None and seconds > 0:
                 return seconds
+
+        return None
+
+    def _time_increment_s(
+        self,
+        image: Mapping[str, Any],
+        size_t: int,
+    ) -> float | None:
+        """Return the measured interval between consecutive T frames in seconds."""
+        if size_t <= 1:
+            return None
 
         dimensions = image.get("Dimensions", {}) if isinstance(image.get("Dimensions"), Mapping) else {}
         t_dimension = dimensions.get("T", {})
@@ -230,7 +240,10 @@ class CZIReaderAdapter:
                 "software_version": application.get("Version"),
                 "microscope": microscope_item.get("@Name"),
                 "microscope_system": microscope_item.get("System"),
-                "frame_interval_s": self._timelapse_interval_s(metadata, image, size_t),
+                "time_increment_configured_s": self._time_increment_configured_s(
+                    metadata, size_t
+                ),
+                "time_increment_s": self._time_increment_s(image, size_t),
                 "channel_count": len(channels),
                 "primary_channel": first_channel.get("name"),
             },

@@ -67,6 +67,31 @@ class ND2ReaderAdapter:
                 return loop
         return None
 
+    @staticmethod
+    def _time_increment_configured_s(time_params: Any, size_t: int) -> float | None:
+        """Return the configured interval between consecutive T frames in seconds."""
+        if size_t <= 1 or time_params is None:
+            return None
+
+        period_ms = getattr(time_params, "periodMs", None)
+        if period_ms is not None and period_ms > 0:
+            return period_ms / 1000
+
+        return None
+
+    @staticmethod
+    def _time_increment_s(time_params: Any, size_t: int) -> float | None:
+        """Return the measured interval between consecutive T frames in seconds."""
+        if size_t <= 1 or time_params is None:
+            return None
+
+        period_diff = getattr(time_params, "periodDiff", None)
+        avg_ms = getattr(period_diff, "avg", None) if period_diff is not None else None
+        if avg_ms is not None and avg_ms > 0:
+            return avg_ms / 1000
+
+        return None
+
     def _normalized_metadata(self, handle: Any) -> dict[str, Any]:
         metadata = handle.metadata
         channels_metadata = list(self._get(metadata, "channels", []))
@@ -139,10 +164,11 @@ class ND2ReaderAdapter:
                 "software_version": None,
                 "microscope": None,
                 "microscope_system": None,
-                "frame_interval_s": (
-                    getattr(time_params, "periodMs", None) / 1000
-                    if getattr(time_params, "periodMs", None) is not None
-                    else None
+                "time_increment_configured_s": self._time_increment_configured_s(
+                    time_params, sizes.get("T", 1)
+                ),
+                "time_increment_s": self._time_increment_s(
+                    time_params, sizes.get("T", 1)
                 ),
                 "channel_count": len(channels),
                 "primary_channel": channels[0]["name"] if channels else None,

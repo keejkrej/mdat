@@ -10,7 +10,7 @@ from typing import Any, Callable
 import numpy as np
 
 from ..input import ImageInfo
-from ...metadata import collect_metadata
+from ..input.metadata import collect_metadata
 from .base import ConvertSelection, ProgressCallback, emit_progress
 
 _INVALID_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')

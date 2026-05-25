@@ -6,8 +6,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from mdat.convert import parse_output_format, position_label
-from mdat.formats.out.acdc import (
+from mdat.core.formats.output import parse_output_format, position_label
+from mdat.core.formats.output.acdc import (
     acdc_basename,
     build_channel_stack,
     channel_for_read_index,

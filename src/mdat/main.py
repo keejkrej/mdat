@@ -122,6 +122,13 @@ def convert(
             help='Channels to convert: "all" or comma-separated indices/slices, e.g. "0:2,4".',
         ),
     ] = "all",
+    z_axis: Annotated[
+        str,
+        typer.Option(
+            "--z",
+            help='Z-slices to convert: "all" or comma-separated indices/slices, e.g. "0:10:2".',
+        ),
+    ] = "all",
     yes: Annotated[
         bool,
         typer.Option("--yes", "-y", help="Skip confirmation prompt."),
@@ -129,16 +136,22 @@ def convert(
 ) -> None:
     try:
         output_format = parse_output_format(output_format)
-        info, pos_indices, time_indices, channel_indices = resolve_selection(
+        info, pos_indices, time_indices, channel_indices, z_indices = resolve_selection(
             input_file,
             position,
             time,
             channel,
+            z_axis,
         )
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
 
-    total = len(pos_indices) * len(time_indices) * len(channel_indices) * info.n_z
+    total = (
+        len(pos_indices)
+        * len(time_indices)
+        * len(channel_indices)
+        * len(z_indices)
+    )
 
     typer.echo(f"Input: {info.n_pos} positions, T={info.n_time}, C={info.n_chan}, Z={info.n_z}")
     typer.echo(f"Output format: {output_format}")
@@ -146,7 +159,8 @@ def convert(
     typer.echo(
         f"Selected {len(pos_indices)}/{info.n_pos} positions, "
         f"{len(time_indices)}/{info.n_time} timepoints, "
-        f"{len(channel_indices)}/{info.n_chan} channels, {info.n_z} z-slices"
+        f"{len(channel_indices)}/{info.n_chan} channels, "
+        f"{len(z_indices)}/{info.n_z} z-slices"
     )
     if output_format == "acdc":
         typer.echo(
@@ -167,6 +181,9 @@ def convert(
     typer.echo("Channels (original indices):")
     typer.echo(f"  {channel_indices}")
     typer.echo("")
+    typer.echo("Z-slices (original indices):")
+    typer.echo(f"  {z_indices}")
+    typer.echo("")
 
     if not yes and not typer.confirm("Proceed with conversion?"):
         raise typer.Abort()
@@ -178,6 +195,7 @@ def convert(
             position,
             time,
             channel,
+            z_axis,
             output,
             output_format=output_format,
             on_progress=progress,

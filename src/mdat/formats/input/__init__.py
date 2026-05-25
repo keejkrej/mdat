@@ -1,4 +1,4 @@
-"""Adapter package exports."""
+"""Input format package exports."""
 
 from .base import ImageInfo, MetadataPayload, ReaderAdapter, ReaderSession
 from .nd2 import ND2ReaderAdapter

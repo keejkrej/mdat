@@ -1,4 +1,4 @@
-"""Shared reader adapter abstractions."""
+"""Shared input format abstractions."""
 
 from __future__ import annotations
 

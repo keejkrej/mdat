@@ -1,4 +1,4 @@
-"""Adapter registry and resolution."""
+"""Input format registry and resolution."""
 
 from __future__ import annotations
 

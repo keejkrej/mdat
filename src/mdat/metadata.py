@@ -10,8 +10,7 @@ from typing import Any
 
 import numpy as np
 
-from .adapters import MetadataPayload, resolve_reader_adapter
-from .convert import inspect_input
+from .formats.input import MetadataPayload, resolve_reader_adapter
 
 
 def _json_safe(value: Any) -> Any:
@@ -38,7 +37,7 @@ def _json_safe(value: Any) -> Any:
 
 def collect_metadata(input_path: Path) -> dict[str, Any]:
     adapter = resolve_reader_adapter(input_path)
-    info = inspect_input(input_path)
+    info = adapter.inspect(input_path)
     payload = adapter.inspect_metadata(input_path)
 
     return _json_safe(

@@ -19,7 +19,14 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 
-from .convert import ProgressEvent, resolve_selection, run_convert
+from .convert import (
+    OutputFormat,
+    ProgressEvent,
+    parse_output_format,
+    position_label,
+    resolve_selection,
+    run_convert,
+)
 from .metadata import collect_raw_metadata, render_metadata_json, write_text_output
 
 app = typer.Typer(
@@ -84,9 +91,16 @@ def convert(
         typer.Option(
             "--output",
             "-o",
-            help="Output directory (will contain Pos*/... TIFF folders).",
+            help="Output directory (mdat: Pos*/...; acdc: Position_*/Images/...).",
         ),
     ],
+    output_format: Annotated[
+        OutputFormat,
+        typer.Option(
+            "--format",
+            help='Output layout: "mdat" (default) or "acdc" (Cell-ACDC).',
+        ),
+    ] = "mdat",
     position: Annotated[
         str,
         typer.Option(
@@ -114,6 +128,7 @@ def convert(
     ] = False,
 ) -> None:
     try:
+        output_format = parse_output_format(output_format)
         info, pos_indices, time_indices, channel_indices = resolve_selection(
             input_file,
             position,
@@ -126,16 +141,25 @@ def convert(
     total = len(pos_indices) * len(time_indices) * len(channel_indices) * info.n_z
 
     typer.echo(f"Input: {info.n_pos} positions, T={info.n_time}, C={info.n_chan}, Z={info.n_z}")
+    typer.echo(f"Output format: {output_format}")
     typer.echo("")
     typer.echo(
         f"Selected {len(pos_indices)}/{info.n_pos} positions, "
         f"{len(time_indices)}/{info.n_time} timepoints, "
         f"{len(channel_indices)}/{info.n_chan} channels, {info.n_z} z-slices"
     )
-    typer.echo(f"Total frames to write: {total}")
+    if output_format == "acdc":
+        typer.echo(
+            f"Total frames to read: {total} "
+            f"({len(pos_indices) * len(channel_indices)} stacked channel TIFFs)"
+        )
+    else:
+        typer.echo(f"Total frames to write: {total}")
     typer.echo("")
     typer.echo("Positions:")
-    typer.echo(f"  {', '.join(f'Pos{i}' for i in pos_indices)}")
+    typer.echo(
+        f"  {', '.join(position_label(i, output_format) for i in pos_indices)}"
+    )
     typer.echo("")
     typer.echo("Timepoints (original indices):")
     typer.echo(f"  {time_indices}")
@@ -155,6 +179,7 @@ def convert(
             time,
             channel,
             output,
+            output_format=output_format,
             on_progress=progress,
         )
     except ValueError as exc:

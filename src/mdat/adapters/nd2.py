@@ -87,15 +87,15 @@ class ND2ReaderAdapter:
             else (None, None, None)
         )
         channels = []
-        for fallback, channel_info in enumerate(channels_metadata):
+        for read_index, channel_info in enumerate(channels_metadata):
             channel = self._get(channel_info, "channel")
             microscope = self._get(channel_info, "microscope")
             volume = self._get(channel_info, "volume")
+            native_index = self._get(channel, "index", read_index)
             channels.append(
                 {
-                    "index": self._get(channel, "index", fallback),
-                    "source_index": self._get(channel, "index", fallback),
-                    "id": None,
+                    "index": read_index,
+                    "id": str(native_index) if native_index is not None else None,
                     "name": self._get(channel, "name"),
                     "color": self._color_hex(self._get(channel, "color")),
                     "fluor": self._get(channel, "name"),

@@ -47,14 +47,6 @@ class CZIReaderAdapter:
         except (TypeError, ValueError):
             return None
 
-    @staticmethod
-    def _channel_index(channel_id: Any, fallback: int) -> int:
-        if isinstance(channel_id, str) and ":" in channel_id:
-            parsed = CZIReaderAdapter._safe_int(channel_id.rsplit(":", 1)[-1])
-            if parsed is not None:
-                return parsed
-        return fallback
-
     def _normalized_metadata(
         self,
         metadata: Mapping[str, Any],
@@ -104,15 +96,13 @@ class CZIReaderAdapter:
             else []
         )
         channels = []
-        for fallback, channel in enumerate(self._as_list(image_channels)):
+        for read_index, channel in enumerate(self._as_list(image_channels)):
             if not isinstance(channel, Mapping):
                 continue
             display_channel = display_by_id.get(channel.get("@Id"), {})
-            channel_index = self._channel_index(channel.get("@Id"), fallback)
             channels.append(
                 {
-                    "index": fallback,
-                    "source_index": channel_index,
+                    "index": read_index,
                     "id": channel.get("@Id"),
                     "name": channel.get("@Name") or display_channel.get("@Name"),
                     "color": channel.get("Color") or display_channel.get("Color"),
@@ -124,7 +114,7 @@ class CZIReaderAdapter:
                         if isinstance(channel.get("DetectionWavelength"), Mapping)
                         else None
                     ),
-                    "pixel_type": channel.get("PixelType") or pixel_types.get(channel_index),
+                    "pixel_type": channel.get("PixelType") or pixel_types.get(read_index),
                     "acquisition_mode": channel.get("AcquisitionMode"),
                     "illumination_type": channel.get("IlluminationType"),
                 }

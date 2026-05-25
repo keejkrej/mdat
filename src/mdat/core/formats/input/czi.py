@@ -47,6 +47,80 @@ class CZIReaderAdapter:
         except (TypeError, ValueError):
             return None
 
+    @staticmethod
+    def _timespan_to_seconds(timespan: Mapping[str, Any] | None) -> float | None:
+        if not isinstance(timespan, Mapping):
+            return None
+        value = CZIReaderAdapter._safe_float(timespan.get("Value"))
+        if value is None:
+            return None
+        unit = str(timespan.get("DefaultUnitFormat", "s")).lower()
+        if unit in {"s", "sec", "second", "seconds"}:
+            return value
+        if unit in {"ms", "millisecond", "milliseconds"}:
+            return value / 1000
+        if unit in {"us", "µs", "microsecond", "microseconds"}:
+            return value / 1_000_000
+        if unit in {"min", "minute", "minutes"}:
+            return value * 60
+        if unit in {"h", "hour", "hours"}:
+            return value * 3600
+        return value
+
+    @staticmethod
+    def _iter_acquisition_blocks(metadata: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+        image_document = metadata.get("ImageDocument", {})
+        md = image_document.get("Metadata", {}) if isinstance(image_document, Mapping) else {}
+        experiment = md.get("Experiment", {}) if isinstance(md, Mapping) else {}
+        blocks = experiment.get("ExperimentBlocks", {}) if isinstance(experiment, Mapping) else {}
+        acquisition_blocks = (
+            blocks.get("AcquisitionBlock", []) if isinstance(blocks, Mapping) else []
+        )
+        return [
+            block
+            for block in CZIReaderAdapter._as_list(acquisition_blocks)
+            if isinstance(block, Mapping)
+        ]
+
+    def _timelapse_interval_s(
+        self,
+        metadata: Mapping[str, Any],
+        image: Mapping[str, Any],
+        size_t: int,
+    ) -> float | None:
+        """Return the interval between consecutive T frames, matching ND2 periodMs semantics."""
+        if size_t <= 1:
+            return None
+
+        for block in self._iter_acquisition_blocks(metadata):
+            setups = block.get("SubDimensionSetups", {})
+            if not isinstance(setups, Mapping):
+                continue
+            time_series = setups.get("TimeSeriesSetup", {})
+            if not isinstance(time_series, Mapping):
+                continue
+            if str(time_series.get("@IsActivated", "")).lower() != "true":
+                continue
+            interval = time_series.get("Interval", {})
+            if not isinstance(interval, Mapping):
+                continue
+            seconds = self._timespan_to_seconds(interval.get("TimeSpan"))
+            if seconds is not None and seconds > 0:
+                return seconds
+
+        dimensions = image.get("Dimensions", {}) if isinstance(image.get("Dimensions"), Mapping) else {}
+        t_dimension = dimensions.get("T", {})
+        if isinstance(t_dimension, Mapping):
+            positions = t_dimension.get("Positions", {})
+            if isinstance(positions, Mapping):
+                interval = positions.get("Interval", {})
+                if isinstance(interval, Mapping):
+                    increment = self._safe_float(interval.get("Increment"))
+                    if increment is not None and increment > 0:
+                        return increment
+
+        return None
+
     def _normalized_metadata(
         self,
         metadata: Mapping[str, Any],
@@ -130,11 +204,10 @@ class CZIReaderAdapter:
         microscope_item = microscope.get("Microscope", {}) if isinstance(microscope, Mapping) else {}
 
         first_channel = channels[0] if channels else {}
-        first_image_channel = self._as_list(image_channels)[0] if image_channels else {}
-        laser_scan_info = (
-            first_image_channel.get("LaserScanInfo", {})
-            if isinstance(first_image_channel, Mapping)
-            else {}
+
+        size_t = (
+            self._safe_int(image.get("SizeT"))
+            or self._axis_size(total_bounding_box, "T")
         )
 
         return {
@@ -157,8 +230,7 @@ class CZIReaderAdapter:
                 "software_version": application.get("Version"),
                 "microscope": microscope_item.get("@Name"),
                 "microscope_system": microscope_item.get("System"),
-                "frame_time_s": self._safe_float(laser_scan_info.get("FrameTime")),
-                "pixel_time_s": self._safe_float(laser_scan_info.get("PixelTime")),
+                "frame_interval_s": self._timelapse_interval_s(metadata, image, size_t),
                 "channel_count": len(channels),
                 "primary_channel": first_channel.get("name"),
             },
@@ -171,8 +243,7 @@ class CZIReaderAdapter:
                 or self._axis_size(total_bounding_box, "Z"),
                 "size_c": self._safe_int(image.get("SizeC"))
                 or self._axis_size(total_bounding_box, "C"),
-                "size_t": self._safe_int(image.get("SizeT"))
-                or self._axis_size(total_bounding_box, "T"),
+                "size_t": size_t,
                 "size_p": len(scenes_bounding_rectangle) if scenes_bounding_rectangle else 1,
                 "pixel_type": image.get("PixelType"),
             },

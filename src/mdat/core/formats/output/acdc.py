@@ -167,7 +167,7 @@ def acdc_metadata_fields(normalized: dict[str, Any]) -> dict[str, Any]:
         "pixel_size_y": pixel_size.get("y"),
         "pixel_size_z": pixel_size.get("z"),
         "lens_na": objective.get("numerical_aperture"),
-        "time_increment": acquisition.get("frame_time_s"),
+        "time_increment": acquisition.get("frame_interval_s"),
     }
 
 

@@ -139,12 +139,11 @@ class ND2ReaderAdapter:
                 "software_version": None,
                 "microscope": None,
                 "microscope_system": None,
-                "frame_time_s": (
+                "frame_interval_s": (
                     getattr(time_params, "periodMs", None) / 1000
                     if getattr(time_params, "periodMs", None) is not None
                     else None
                 ),
-                "pixel_time_s": None,
                 "channel_count": len(channels),
                 "primary_channel": channels[0]["name"] if channels else None,
                 "z_step_um": getattr(z_params, "stepUm", None),

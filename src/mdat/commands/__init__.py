@@ -1,3 +1,3 @@
-from . import convert, metadata
+from . import convert, metadata, smb
 
-__all__ = ["convert", "metadata"]
+__all__ = ["convert", "metadata", "smb"]

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from mdat.core.io.sources import InputLocation, location_suffix
 
 from .base import ReaderAdapter
 from .czi import CZIReaderAdapter
@@ -15,8 +15,9 @@ _FORMAT_ADAPTERS: tuple[ReaderAdapter, ...] = (
 )
 
 
-def resolve_reader_adapter(input_path: Path) -> ReaderAdapter:
+def resolve_reader_adapter(input_path: InputLocation) -> ReaderAdapter:
+    suffix = location_suffix(input_path)
     for adapter in _FORMAT_ADAPTERS:
-        if adapter.supports(input_path):
+        if suffix in adapter.suffixes:
             return adapter
-    raise ValueError(f"Unsupported input file format: {input_path.suffix}")
+    raise ValueError(f"Unsupported input file format: {suffix}")

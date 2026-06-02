@@ -8,7 +8,18 @@ from typing import Any
 
 import numpy as np
 
+from mdat.core.io.sources import InputLocation, open_binary_source
+
 from .base import ImageInfo, MetadataPayload, ReaderSession, _ensure_2d
+
+
+def _open_czi_context(input_path: InputLocation):
+    from pylibCZIrw import czi as pyczi
+
+    source = open_binary_source(input_path)
+    if isinstance(source, Path):
+        return pyczi.open_czi(str(source))
+    return pyczi.open_czi(source)
 
 
 class CZIReaderAdapter:
@@ -17,8 +28,10 @@ class CZIReaderAdapter:
     name = "czi"
     suffixes = (".czi",)
 
-    def supports(self, input_path: Path) -> bool:
-        return input_path.suffix.lower() in self.suffixes
+    def supports(self, input_path: InputLocation) -> bool:
+        from mdat.core.io.sources import location_suffix
+
+        return location_suffix(input_path) in self.suffixes
 
     @staticmethod
     def _axis_size(ranges: Mapping[str, tuple[int, int]], axis: str) -> int:
@@ -262,10 +275,8 @@ class CZIReaderAdapter:
             },
         }
 
-    def inspect(self, input_path: Path) -> ImageInfo:
-        from pylibCZIrw import czi as pyczi
-
-        with pyczi.open_czi(str(input_path)) as handle:
+    def inspect(self, input_path: InputLocation) -> ImageInfo:
+        with _open_czi_context(input_path) as handle:
             total_bounding_box = dict(handle.total_bounding_box)
             scenes_bounding = dict(handle.scenes_bounding_rectangle)
             has_scenes = len(scenes_bounding) > 0
@@ -278,10 +289,8 @@ class CZIReaderAdapter:
                 n_z=self._axis_size(total_bounding_box, "Z"),
             )
 
-    def inspect_metadata(self, input_path: Path) -> MetadataPayload:
-        from pylibCZIrw import czi as pyczi
-
-        with pyczi.open_czi(str(input_path)) as handle:
+    def inspect_metadata(self, input_path: InputLocation) -> MetadataPayload:
+        with _open_czi_context(input_path) as handle:
             total_bounding_box = handle.total_bounding_box
             scenes_bounding_rectangle = handle.scenes_bounding_rectangle
             pixel_types = handle.pixel_types
@@ -296,10 +305,8 @@ class CZIReaderAdapter:
                 raw_format="xml",
             )
 
-    def open(self, input_path: Path) -> ReaderSession:
-        from pylibCZIrw import czi as pyczi
-
-        cm = pyczi.open_czi(str(input_path))
+    def open(self, input_path: InputLocation) -> ReaderSession:
+        cm = _open_czi_context(input_path)
         handle = cm.__enter__()
         total_bounding_box = handle.total_bounding_box
         scenes_bounding = handle.scenes_bounding_rectangle

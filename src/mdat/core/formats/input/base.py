@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Callable, Protocol
 
 import numpy as np
+
+from mdat.core.io.sources import InputLocation
 
 
 @dataclass(frozen=True)
@@ -37,16 +38,16 @@ class ReaderAdapter(Protocol):
     name: str
     suffixes: tuple[str, ...]
 
-    def supports(self, input_path: Path) -> bool:
+    def supports(self, input_path: InputLocation) -> bool:
         ...
 
-    def inspect(self, input_path: Path) -> ImageInfo:
+    def inspect(self, input_path: InputLocation) -> ImageInfo:
         ...
 
-    def inspect_metadata(self, input_path: Path) -> MetadataPayload:
+    def inspect_metadata(self, input_path: InputLocation) -> MetadataPayload:
         ...
 
-    def open(self, input_path: Path) -> ReaderSession:
+    def open(self, input_path: InputLocation) -> ReaderSession:
         ...
 
 
@@ -62,6 +63,7 @@ def _ensure_2d(frame: np.ndarray) -> np.ndarray:
 
 __all__ = [
     "ImageInfo",
+    "InputLocation",
     "MetadataPayload",
     "ReaderSession",
     "ReaderAdapter",

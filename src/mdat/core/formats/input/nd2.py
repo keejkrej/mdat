@@ -8,7 +8,18 @@ from typing import Any
 
 import numpy as np
 
+from mdat.core.io.sources import InputLocation, open_binary_source
+
 from .base import ImageInfo, MetadataPayload, ReaderSession, _ensure_2d
+
+
+def _open_nd2_file(input_path: InputLocation):
+    import nd2
+
+    source = open_binary_source(input_path)
+    if isinstance(source, Path):
+        return nd2.ND2File(str(source))
+    return nd2.ND2File(source)
 
 
 @dataclass(frozen=True)
@@ -23,13 +34,13 @@ class ND2ReaderAdapter:
     name = "nd2"
     suffixes = (".nd2",)
 
-    def supports(self, input_path: Path) -> bool:
-        return input_path.suffix.lower() in self.suffixes
+    def supports(self, input_path: InputLocation) -> bool:
+        from mdat.core.io.sources import location_suffix
 
-    def inspect(self, input_path: Path) -> ImageInfo:
-        import nd2
+        return location_suffix(input_path) in self.suffixes
 
-        handle = nd2.ND2File(str(input_path))
+    def inspect(self, input_path: InputLocation) -> ImageInfo:
+        handle = _open_nd2_file(input_path)
         try:
             sizes = handle.sizes
             return ImageInfo(
@@ -185,10 +196,10 @@ class ND2ReaderAdapter:
             },
         }
 
-    def inspect_metadata(self, input_path: Path) -> MetadataPayload:
+    def inspect_metadata(self, input_path: InputLocation) -> MetadataPayload:
         import nd2
 
-        handle = nd2.ND2File(str(input_path))
+        handle = _open_nd2_file(input_path)
         try:
             ome_metadata = handle.ome_metadata()
             raw = ome_metadata.to_xml() if hasattr(ome_metadata, "to_xml") else str(ome_metadata)
@@ -201,10 +212,8 @@ class ND2ReaderAdapter:
         finally:
             handle.close()
 
-    def open(self, input_path: Path) -> ReaderSession:
-        import nd2
-
-        handle = nd2.ND2File(str(input_path))
+    def open(self, input_path: InputLocation) -> ReaderSession:
+        handle = _open_nd2_file(input_path)
         sizes = handle.sizes
         n_pos = sizes.get("P", 1)
         n_time = sizes.get("T", 1)

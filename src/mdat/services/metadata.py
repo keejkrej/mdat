@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from mdat.core.io.sources import InputLocation
 from mdat.core.formats.input.metadata import collect_raw_metadata, render_metadata_json
 from mdat.utils.files import write_text_output
 
 
 def run_metadata(
-    input_path: Path,
+    input_path: InputLocation,
     *,
     output: Path | None = None,
     raw: bool = False,

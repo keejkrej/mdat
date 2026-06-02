@@ -6,19 +6,30 @@ from typing import Annotated
 import typer
 
 from mdat.app import app
+from mdat.core.cli_input import prepare_input_location
 from mdat.services.metadata import run_metadata
 
 
 @app.command()
 def metadata(
     input_file: Annotated[
-        Path,
+        str,
         typer.Argument(
-            exists=True,
-            dir_okay=False,
-            help="Path to the .nd2 or .czi file to inspect.",
+            help="Local path or smb:{sessionId}/relative/file.nd2|.czi",
         ),
     ],
+    smb_url: Annotated[
+        str | None,
+        typer.Option("--smb-url", help="SMB URL for one-shot connect."),
+    ] = None,
+    smb_username: Annotated[
+        str | None,
+        typer.Option("--smb-username", "-u", help="SMB username."),
+    ] = None,
+    smb_password: Annotated[
+        str | None,
+        typer.Option("--smb-password", "-p", help="SMB password."),
+    ] = None,
     output: Annotated[
         Path | None,
         typer.Option(
@@ -36,7 +47,13 @@ def metadata(
     ] = False,
 ) -> None:
     try:
-        content = run_metadata(input_file, output=output, raw=raw)
+        location = prepare_input_location(
+            input_file,
+            smb_url=smb_url,
+            smb_username=smb_username,
+            smb_password=smb_password,
+        )
+        content = run_metadata(location, output=output, raw=raw)
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
 

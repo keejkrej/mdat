@@ -18,6 +18,7 @@ from rich.progress import (
 )
 
 from mdat.app import app
+from mdat.core.cli_input import prepare_input_location
 from mdat.core.formats.output import OutputFormat, ProgressEvent, parse_output_format, position_label
 from mdat.core.selection import resolve_selection
 from mdat.services.convert import run_convert
@@ -66,13 +67,30 @@ class RichProgressReporter:
 @app.command()
 def convert(
     input_file: Annotated[
-        Path,
+        str,
         typer.Argument(
-            exists=True,
-            dir_okay=False,
-            help="Path to the .nd2 or .czi file to convert.",
+            help="Local path or smb:{sessionId}/relative/file.nd2|.czi",
         ),
     ],
+    smb_url: Annotated[
+        str | None,
+        typer.Option(
+            "--smb-url",
+            help="SMB URL for one-shot connect (//host/share) when using smb: paths.",
+        ),
+    ] = None,
+    smb_username: Annotated[
+        str | None,
+        typer.Option("--smb-username", "-u", help="SMB username."),
+    ] = None,
+    smb_password: Annotated[
+        str | None,
+        typer.Option(
+            "--smb-password",
+            "-p",
+            help="SMB password (omit when session already connected).",
+        ),
+    ] = None,
     output: Annotated[
         Path,
         typer.Option(
@@ -122,9 +140,15 @@ def convert(
     ] = False,
 ) -> None:
     try:
+        location = prepare_input_location(
+            input_file,
+            smb_url=smb_url,
+            smb_username=smb_username,
+            smb_password=smb_password,
+        )
         output_format = parse_output_format(output_format)
         info, pos_indices, time_indices, channel_indices, z_indices = resolve_selection(
-            input_file,
+            location,
             position,
             time,
             channel,
@@ -178,7 +202,7 @@ def convert(
     progress = RichProgressReporter()
     try:
         run_convert(
-            input_file,
+            location,
             position,
             time,
             channel,

@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from mdat.core.io.sources import InputLocation
 from mdat.utils.slices import parse_slice_string
 
 from .formats.input.base import ImageInfo
@@ -11,7 +10,7 @@ from .formats.input.session import inspect_input
 
 
 def resolve_selection(
-    input_path: Path,
+    input_path: InputLocation,
     position_slice: str,
     time_slice: str,
     channel_slice: str,

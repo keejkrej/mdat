@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from mdat.core.io.sources import InputLocation
 from mdat.core.formats.input.session import open_reader
 from mdat.core.formats.output import (
     ConvertSelection,
@@ -13,7 +14,7 @@ from mdat.utils.slices import parse_slice_string
 
 
 def run_convert(
-    input_path: Path,
+    input_path: InputLocation,
     position_slice: str,
     time_slice: str,
     channel_slice: str,

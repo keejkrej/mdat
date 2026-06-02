@@ -152,8 +152,10 @@ def channel_labels_for(
     return labels
 
 
-def acdc_basename(input_path: Path, p_idx: int, *, num_pos_digits: int) -> str:
-    stem = sanitize_label(input_path.stem, fallback="image")
+def acdc_basename(input_path: Path | str, p_idx: int, *, num_pos_digits: int) -> str:
+    from mdat.core.io.sources import location_stem
+
+    stem = sanitize_label(location_stem(input_path), fallback="image")
     pos_num = str(p_idx + 1).zfill(num_pos_digits)
     return f"{stem}_s{pos_num}_"
 

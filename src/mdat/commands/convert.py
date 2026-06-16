@@ -72,6 +72,14 @@ def convert(
             help="Local path or smb:{sessionId}/relative/file.nd2|.czi",
         ),
     ],
+    output: Annotated[
+        Path,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output directory (mdat: Pos*/...; acdc: Position_*/Images/...).",
+        ),
+    ],
     smb_url: Annotated[
         str | None,
         typer.Option(
@@ -91,14 +99,6 @@ def convert(
             help="SMB password (omit when session already connected).",
         ),
     ] = None,
-    output: Annotated[
-        Path,
-        typer.Option(
-            "--output",
-            "-o",
-            help="Output directory (mdat: Pos*/...; acdc: Position_*/Images/...).",
-        ),
-    ],
     output_format: Annotated[
         OutputFormat,
         typer.Option(

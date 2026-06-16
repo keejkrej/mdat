@@ -1,0 +1,3 @@
+[workspace]
+members = ["mdat", "mdat-wasm"]
+resolver = "2"

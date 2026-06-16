@@ -3,3 +3,4 @@ python/**/__pycache__/
 **/__pycache__/
 python/*.egg-info/
 rust/target/
+rust/mdat-wasm/pkg/

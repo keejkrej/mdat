@@ -1,0 +1,14 @@
+[project]
+name = "mdat-workspace"
+version = "0.1.0"
+description = "Monorepo for mdat: Rust crates and Python packages for microscopy data utilities."
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+
+[tool.uv.workspace]
+members = ["python/mdat"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]

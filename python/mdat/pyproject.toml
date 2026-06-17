@@ -2,8 +2,8 @@
 name = "mdat"
 version = "0.1.0"
 description = "Python CLI package for standalone ND2/CZI microscopy data utilities."
-readme = "README.md"
-requires-python = ">=3.12"
+readme = "../../README.md"
+requires-python = ">=3.12,<3.14"
 dependencies = [
   "markdown-it-py<4",
   "mdat-smb-py[smbclient]",

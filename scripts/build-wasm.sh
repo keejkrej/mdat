@@ -2,7 +2,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$root/rust"
+cd "$root"
 
 if ! command -v wasm-pack >/dev/null 2>&1; then
   echo "wasm-pack is required. Install with: cargo install wasm-pack" >&2
@@ -20,4 +20,4 @@ if command -v brew >/dev/null 2>&1 && brew --prefix lld >/dev/null 2>&1; then
   export CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_LINKER="${LLD}/bin/wasm-ld"
 fi
 
-wasm-pack build mdat-wasm --target web --out-dir pkg
+wasm-pack build crates/mdat-wasm --target web --out-dir pkg

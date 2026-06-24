@@ -8,7 +8,7 @@ stands for **microscopy data**.
 Install the CLI globally with [uv](https://docs.astral.sh/uv/):
 
 ```bash
-uv tool install git+https://github.com/keejkrej/mdat.git
+uv tool install git+https://github.com/keejkrej/mdat.git#subdirectory=python/mdat
 ```
 
 Then run `mdat` directly:

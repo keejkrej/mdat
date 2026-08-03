@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import csv
 from pathlib import Path
 from typing import Callable
 
@@ -59,20 +58,17 @@ class MdatOutputFormat:
             pos_dir = output / f"Pos{p_idx}"
             pos_dir.mkdir(exist_ok=True)
 
-            with open(pos_dir / "time_map.csv", "w", newline="", encoding="utf-8") as fh:
-                writer = csv.writer(fh)
-                writer.writerow(["t", "t_real"])
-                for t_new, t_orig in enumerate(time_indices):
-                    writer.writerow([t_new, t_orig])
-
-            for t_new, t_orig in enumerate(time_indices):
+            # Use original source time indices in filenames (gaps allowed).
+            # Downstream tools (e.g. lisca folder source) discover times from
+            # names and support non-contiguous series — no time_map renumbering.
+            for t_orig in time_indices:
                 for c_orig in channel_indices:
                     for z_orig in z_indices:
                         frame = read_frame(p_idx, t_orig, c_orig, z_orig)
                         filename = (
                             f"img_channel{c_orig:03d}"
                             f"_position{p_idx:03d}"
-                            f"_time{t_new:09d}"
+                            f"_time{t_orig:09d}"
                             f"_z{z_orig:03d}.tif"
                         )
                         write_tiff(pos_dir / filename, frame)
